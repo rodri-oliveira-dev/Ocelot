@@ -381,8 +381,27 @@ public sealed class AggregateTests : Steps
 
     [Fact]
     [Trait("Feat", "1389")]
-    public void TODO()
+    public void Should_return_response_200_with_post_body_sent_on_multiple_services()
     {
+        var port1 = PortFinder.GetRandomPort();
+        var port2 = PortFinder.GetRandomPort();
+        var route1 = GivenAggRoute(port1, "Service1", "/Service1", "/Sub1");
+        var route2 = GivenAggRoute(port2, "Service2", "/Service2", "/Sub2");
+        var configuration = GivenConfiguration(route1, route2);
+        configuration.Aggregates[0].UpstreamHttpMethod = [HttpMethods.Post];
+        var requestBody = @"{""id"":1,""response"":""fromBody-#REPLACESTRING#""}";
+        var sub1ResponseContent = @"{""id"":1,""response"":""fromBody-s1""}";
+        var sub2ResponseContent = @"{""id"":1,""response"":""fromBody-s2""}";
+        var expected = $"{{\"Service1\":{sub1ResponseContent},\"Service2\":{sub2ResponseContent}}}";
+        this
+            .Given(x => x.GivenServiceIsRunning(0, port1, "/Sub1", 200, reqBody => reqBody.Replace("#REPLACESTRING#", "s1")))
+            .Given(x => x.GivenServiceIsRunning(1, port2, "/Sub2", 200, reqBody => reqBody.Replace("#REPLACESTRING#", "s2")))
+            .And(x => GivenThereIsAConfiguration(configuration))
+            .And(x => GivenOcelotIsRunning())
+            .When(x => WhenIPostUrlOnTheApiGateway("/", new StringContent(requestBody, Encoding.UTF8, "application/json")))
+            .Then(x => ThenTheStatusCodeShouldBe(HttpStatusCode.OK))
+            .And(x => ThenTheResponseBodyShouldBe(expected))
+        .BDDfy();
     }
 
     private static string FormatFormCollection(IFormCollection reqForm)

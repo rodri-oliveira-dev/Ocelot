@@ -1,10 +1,8 @@
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Ocelot.Administration;
-using Ocelot.Authorization;
 using Ocelot.Claims;
 using Ocelot.Configuration;
 using Ocelot.Configuration.ChangeTracking;
@@ -48,8 +46,14 @@ public class OcelotBuilder : IOcelotBuilder
 
     public OcelotBuilder(IServiceCollection services, IConfiguration configurationRoot, Func<IMvcCoreBuilder, Assembly, IMvcCoreBuilder> customBuilder = null)
     {
-        Configuration = configurationRoot;
         Services = services;
+        Configuration = configurationRoot;
+
+        // Add ASP.NET services
+        var assembly = typeof(FileConfigurationController).GetTypeInfo().Assembly;
+        customBuilder ??= AddDefaultAspNetServices;
+        MvcCoreBuilder = customBuilder.Invoke(services.AddMvcCore(), assembly);
+
         Services.Configure<FileConfiguration>(configurationRoot);
         Services.Configure<FileGlobalConfiguration>(configurationRoot.GetSection(nameof(FileConfiguration.GlobalConfiguration)));
         Services.AddOcelotConfigurationValidators(); // based on the AbstractValidator<FileModel> interface
@@ -60,7 +64,6 @@ public class OcelotBuilder : IOcelotBuilder
         Services.TryAddSingleton<IInternalConfigurationCreator, FileInternalConfigurationCreator>();
         Services.TryAddSingleton<IRoutesCreator, StaticRoutesCreator>();
         Services.TryAddSingleton<IDynamicsCreator, DynamicRoutesCreator>();
-        Services.TryAddSingleton<IAggregatesCreator, AggregatesCreator>();
         Services.TryAddSingleton<IRouteKeyCreator, RouteKeyCreator>();
         Services.TryAddSingleton<IConfigurationCreator, ConfigurationCreator>();
         Services.TryAddSingleton<ILoadBalancerOptionsCreator, LoadBalancerOptionsCreator>();
@@ -81,8 +84,6 @@ public class OcelotBuilder : IOcelotBuilder
         Services.TryAddSingleton<ILoadBalancerHouse, LoadBalancerHouse>();
         Services.TryAddSingleton<IRemoveOutputHeaders, RemoveOutputHeaders>();
         Services.TryAddSingleton<IClaimToThingConfigurationParser, ClaimToThingConfigurationParser>();
-        Services.TryAddSingleton<IClaimsAuthorizer, ClaimsAuthorizer>();
-        Services.TryAddSingleton<IScopesAuthorizer, ScopesAuthorizer>();
         Services.TryAddSingleton<IAddClaimsToRequest, AddClaimsToRequest>();
         Services.TryAddSingleton<IAddHeadersToRequest, AddHeadersToRequest>();
         Services.TryAddSingleton<IAddQueriesToRequest, AddQueriesToRequest>();
@@ -107,12 +108,9 @@ public class OcelotBuilder : IOcelotBuilder
         // Chinese developers should read StackOverflow ignoring Microsoft Learn docs -> http://stackoverflow.com/questions/37371264/invalidoperationexception-unable-to-resolve-service-for-type-microsoft-aspnetc
         Services.AddHttpContextAccessor();
         Services.TryAddSingleton<IRequestScopedDataRepository, HttpDataRepository>();
-        Services.TryAddSingleton<IResponseAggregator, SimpleJsonResponseAggregator>(); // TODO Move to features as AddOcelotAggregation
         Services.TryAddSingleton<ITracingHandlerFactory, TracingHandlerFactory>();
         Services.TryAddSingleton<IAddHeadersToResponse, AddHeadersToResponse>();
         Services.TryAddSingleton<IPlaceholders, Placeholders>();
-        Services.TryAddSingleton<IResponseAggregatorFactory, InMemoryResponseAggregatorFactory>();
-        Services.TryAddSingleton<IDefinedAggregatorProvider, ServiceLocatorDefinedAggregatorProvider>();
         Services.TryAddSingleton<IDownstreamRequestCreator, DownstreamRequestCreator>();
         Services.TryAddSingleton<IFrameworkDescription, FrameworkDescription>();
         Services.TryAddSingleton<IExceptionToErrorMapper, HttpExceptionToErrorMapper>();
@@ -125,19 +123,16 @@ public class OcelotBuilder : IOcelotBuilder
         Services.TryAddSingleton<ISecurityPolicy, IPSecurityPolicy>();
 
         // Features
+        Services.AddOcelotAggregation();
+        Services.AddOcelotAuthorization(MvcCoreBuilder, configurationRoot);
         Services.AddOcelotCache();
         Services.AddOcelotConfigurationRepository();
         Services.AddOcelotHeaderRouting();
         Services.AddOcelotLogging();
-        Services.AddOcelotMessageInvokerPool();
         Services.AddOcelotMetadata();
         Services.AddOcelotQualityOfService();
         Services.AddOcelotRateLimiting();
-
-        // Add ASP.NET services
-        var assembly = typeof(FileConfigurationController).GetTypeInfo().Assembly;
-        MvcCoreBuilder = (customBuilder ?? AddDefaultAspNetServices)
-            .Invoke(Services.AddMvcCore(), assembly);
+        Services.AddOcelotRequester();
     }
 
     /// <summary>
@@ -168,11 +163,9 @@ public class OcelotBuilder : IOcelotBuilder
         Services
             .AddMiddlewareAnalysis()
             .AddWebEncoders();
-
         return builder
             .AddApplicationPart(assembly)
             .AddControllersAsServices()
-            .AddAuthorization()
             .AddNewtonsoftJson();
     }
 

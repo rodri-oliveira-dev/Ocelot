@@ -1,5 +1,9 @@
 ﻿using FluentValidation;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using Ocelot.Authorization;
 using Ocelot.Cache;
 using Ocelot.Configuration.Creator;
 using Ocelot.Configuration.File;
@@ -7,6 +11,7 @@ using Ocelot.Configuration.Repository;
 using Ocelot.Configuration.Validator;
 using Ocelot.DownstreamRouteFinder.HeaderMatcher;
 using Ocelot.Logging;
+using Ocelot.Multiplexer;
 using Ocelot.QualityOfService;
 using Ocelot.RateLimiting;
 
@@ -14,6 +19,39 @@ namespace Ocelot.DependencyInjection;
 
 public static class Features
 {
+    /// <summary>
+    /// Ocelot feature: <see href="https://github.com/ThreeMammals/Ocelot/blob/develop/docs/features/aggregation.rst">Aggregation</see>.
+    /// </summary>
+    /// <remarks>
+    /// Read The Docs: <see href="https://ocelot.readthedocs.io/en/latest/features/aggregation.html">Aggregation</see>.
+    /// </remarks>
+    /// <param name="services">The services collection to add the feature to.</param>
+    /// <returns>The same <see cref="IServiceCollection"/> object.</returns>
+    public static IServiceCollection AddOcelotAggregation(this IServiceCollection services)
+    {
+        services.TryAddSingleton<IAggregatesCreator, AggregatesCreator>();
+        services.TryAddSingleton<IResponseAggregator, SimpleJsonResponseAggregator>();
+        services.TryAddSingleton<IResponseAggregatorFactory, InMemoryResponseAggregatorFactory>();
+        services.TryAddSingleton<IDefinedAggregatorProvider, ServiceLocatorDefinedAggregatorProvider>();
+        return services;
+    }
+
+    /// <summary>
+    /// Ocelot feature: <see href="https://github.com/ThreeMammals/Ocelot/blob/develop/docs/features/authorization.rst">Authorization</see>.
+    /// </summary>
+    /// <param name="services">The services collection to add the feature to.</param>
+    /// <param name="builder">The default builder being returned by <see cref="MvcCoreServiceCollectionExtensions.AddMvcCore(IServiceCollection)"/> extension-method.</param>
+    /// <param name="configuration">The exact configuration instance passed to <c>AddOcelot</c>.</param>
+    /// <returns>The same <see cref="IServiceCollection"/> object.</returns>
+    public static IServiceCollection AddOcelotAuthorization(this IServiceCollection services, IMvcCoreBuilder builder, IConfiguration configuration)
+    {
+        builder.AddAuthorization(); // TODO Intro AuthorizationOptions (see 2nd constructor)
+        return services
+            .AddSingleton<IClaimsAuthorizer, ClaimsAuthorizer>()
+            .AddSingleton<IScopesAuthorizer, ScopesAuthorizer>()
+            .AddSingleton<IPostConfigureOptions<FileConfiguration>>(new RouteClaimsRequirementPostConfigureOptions(configuration));
+    }
+
     /// <summary>This Ocelot Core feature adds validation for JSON configuration File-models.</summary>
     /// <remarks>Added validator-classes must implement the <see cref="AbstractValidator{FileConfiguration}"/> interface, where T is File-model.</remarks>
     /// <param name="services">The services collection to add the feature to.</param>
